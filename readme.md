@@ -27,3 +27,16 @@ $ python -m venv venv
 772vjrvj@DESKTOP-SHRPUN8 MINGW64 ~/Documents/GitHub/address-api (main)
 $ source venv/Scripts/activate
 (venv)
+
+772vjrvj@DESKTOP-SHRPUN8 MINGW64 ~/Documents/GitHub/address-api (main)
+$ pip install -r requirements.txt
+
+
+touch .env
+notepad .env
+
+MASTER_API_KEY=my_secret_master_key_1234!
+
+
+
+python run.py
