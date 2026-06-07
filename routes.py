@@ -2,10 +2,21 @@ import os
 from flask import Blueprint, request, jsonify
 from functools import wraps
 from dotenv import load_dotenv
+
+from geo_service import process_reverse_batch_service
 from logger import get_logger
 
-# 1. .env 파일 환경변수 로드
-load_dotenv()
+# ====================================================
+# 1. .env 파일 환경변수 로드 (절대 경로 방식으로 변경!)
+# ====================================================
+basedir = os.path.abspath(os.path.dirname(__file__))
+env_path = os.path.join(basedir, '.env')
+
+# 🌟 1. 윈도우 특유의 눈에 안 보이는 문자(BOM)를 무시하고 강제로 읽게 만듦
+load_dotenv(env_path, override=True, encoding='utf-8-sig')
+
+MASTER_KEY = os.getenv('MASTER_API_KEY')
+VALID_API_KEYS = {MASTER_KEY} if MASTER_KEY else set()
 
 # Blueprint 생성
 api_bp = Blueprint('api', __name__)
@@ -44,27 +55,24 @@ def ping_test():
 
 
 # ====================================================
-# [본 기능 API] 주소 변환 기능 (Key 필수, POST 방식)
+# [본 기능 API] 20개 리스트 주소 일괄 변환 (경로 수정됨)
 # ====================================================
-@api_bp.route('/api/get_address', methods=['POST'])
+@api_bp.route('/geocode/reverse-batch', methods=['POST'])
 @require_apikey
-def get_address():
-    data = request.get_json()
-    if not data:
-        logger.error(f"요청 실패: JSON 데이터 없음 (IP: {request.remote_addr})")
-        return jsonify({"status": "error", "message": "No JSON payload"}), 400
+def get_address_batch():
+    try:
+        data = request.get_json()
+        if not data or not isinstance(data, list):
+            return jsonify({"status": "error", "message": "Payload must be a JSON array"}), 400
 
-    lat = data.get('lat')
-    lng = data.get('lng')
+        logger.info(f"배치 요청 수신 - 건수: {len(data)}건")
 
-    logger.info(f"요청 수신 - 위도: {lat}, 경도: {lng} (IP: {request.remote_addr})")
+        # 서비스 로직 호출
+        results = process_reverse_batch_service(data)
 
-    # 향후 DB 조회 로직이 들어갈 자리
-    dummy_address = "경기도 수원시 영통구 망포동 힐스테이트영통 110동"
+        return jsonify(results) # 정상일 때 결과 리스트 반환
 
-    logger.info(f"응답 완료 - 매칭 주소: {dummy_address}")
-
-    return jsonify({
-        "status": "success",
-        "address": dummy_address
-    })
+    except Exception as e:
+        logger.error(f"서버 내부 에러 발생: {e}")
+        # 에러 발생 시에도 JSON 리스트 []를 반환하여 클라이언트가 멈추지 않게 함
+        return jsonify([]), 200

@@ -1,3 +1,10 @@
+import sys
+import io
+
+# 표준 출력을 UTF-8로 재설정
+sys.stdout = io.TextIOWrapper(sys.stdout.detach(), encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.detach(), encoding='utf-8')
+
 from flask import Flask
 from waitress import serve
 from routes import api_bp
