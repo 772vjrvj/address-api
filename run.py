@@ -5,6 +5,8 @@ from logger import get_logger
 
 app = Flask(__name__)
 
+app.json.ensure_ascii = False
+
 # 분리해둔 API 라우팅 모듈을 조립
 app.register_blueprint(api_bp)
 
