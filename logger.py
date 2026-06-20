@@ -1,58 +1,92 @@
+# logger.py
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import os
 
+
 def get_logger():
     """
-    서버의 실시간 로그를 터미널과 파일에 동시에 기록하고 관리하는 로거를 생성합니다.
-    매일 자정에 로그 파일을 분리하며, 최신 10일치 파일만 자동으로 유지합니다.
+    주소 변환 API 서버 공통 로거 생성 함수.
+
+    기능:
+    1. 터미널과 파일에 동시에 로그 출력
+    2. 매일 자정마다 로그 파일 자동 분리
+    3. 최근 10일치 로그만 보관
+    4. Flask / Waitress 환경에서 중복 핸들러 등록 방지
+    5. 윈도우 환경 한글 로그 깨짐 방지
+    6. blue / green 서버 동시 실행 시 로그 파일 충돌 방지
+       - 5101 서버: logs/server_5101.log
+       - 5102 서버: logs/server_5102.log
     """
 
-    # 1. 로그를 저장할 폴더가 없으면 안전하게 자동 생성
-    # (이미 폴더가 존재한다면 에러 없이 넘어감)
-    log_dir = 'logs'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    # ====================================================
+    # 1. 로거 객체 생성
+    # ====================================================
+    logger = logging.getLogger("AddressAPI")
 
-    # 2. 고유한 이름('AddressAPI')을 가진 로거 객체 생성 및 레벨 설정
-    logger = logging.getLogger('AddressAPI')
-
-    # 중복 세팅 방지: 로거에 이미 핸들러가 등록되어 있다면 기존 로거를 그대로 반환
-    # (Flask 앱 리로드 시 로그가 중복 출력되는 현상을 방지함)
-    if len(logger.handlers) > 0:
+    # 이미 핸들러가 등록되어 있으면 그대로 반환
+    if logger.handlers:
         return logger
 
-    # INFO 레벨 이상의 로그(INFO, WARNING, ERROR, CRITICAL)만 기록함
     logger.setLevel(logging.INFO)
+    logger.propagate = False
 
-    # 3. 로그 출력 포맷 설정 (시간, 로그레벨, 메시지 내용을 직관적으로 표기)
-    # 출력 예시: [2026-06-07 14:15:30] INFO - 요청 수신 - 위도: 37.123, 경도: 127.123
-    log_formatter = logging.Formatter('[%(asctime)s] %(levelname)s - %(message)s', '%Y-%m-%d %H:%M:%S')
+    # ====================================================
+    # 2. 로그 폴더 생성
+    # ====================================================
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    log_dir = os.path.join(basedir, "logs")
+    os.makedirs(log_dir, exist_ok=True)
 
-    # =================================================================
-    # [핸들러 1] 터미널(콘솔) 실시간 출력 핸들러
-    # =================================================================
-    # 모니터링 창을 띄워두었을 때 관리자가 즉각적으로 현황을 파악할 수 있도록 돕습니다.
+    # ====================================================
+    # 3. 로그 파일명 결정
+    # ====================================================
+    # PM2 ecosystem.config.js 에서 SERVER_PORT=5101 / 5102 로 들어온다.
+    # 포트별로 로그 파일을 분리해야 blue / green 동시 실행 시
+    # Windows 파일 잠금 충돌이 발생하지 않는다.
+    server_port = os.getenv("SERVER_PORT", "unknown").strip() or "unknown"
+
+    # 혹시 모를 이상 문자를 제거해서 파일명 안전하게 처리
+    safe_server_port = "".join(
+        ch for ch in server_port
+        if ch.isalnum() or ch in ("_", "-")
+    )
+
+    log_file_name = f"server_{safe_server_port}.log"
+    log_file_path = os.path.join(log_dir, log_file_name)
+
+    # ====================================================
+    # 4. 로그 포맷
+    # ====================================================
+    log_formatter = logging.Formatter(
+        "[%(asctime)s] %(levelname)s - %(message)s",
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    # ====================================================
+    # 5. 콘솔 로그 핸들러
+    # ====================================================
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(log_formatter)
     logger.addHandler(console_handler)
 
-    # =================================================================
-    # [핸들러 2] 파일 자동 로테이션 저장 핸들러 (핵심 기능)
-    # =================================================================
-    # - filename: 실시간으로 로그를 기록할 기본 파일명입니다.
-    # - when='midnight': 매일 밤 12시(자정)를 기준으로 파일을 분리합니다.
-    # - interval=1: 1일 주기로 로테이션을 수행합니다.
-    # - backupCount=10: 과거 로그 파일을 최대 10개만 보관하고, 초과 시 가장 오래된 파일을 자동 삭제합니다.
-    # - encoding='utf-8': 삼성 노트북(윈도우 환경)에서 한글 메시지가 깨지지 않도록 절대적인 인코딩을 보장합니다.
+    # ====================================================
+    # 6. 파일 로그 핸들러
+    # ====================================================
     file_handler = TimedRotatingFileHandler(
-        filename=os.path.join(log_dir, 'server.log'),
-        when='midnight',
+        filename=log_file_path,
+        when="midnight",
         interval=1,
         backupCount=10,
-        encoding='utf-8'
+        encoding="utf-8",
+        delay=True
     )
+
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(log_formatter)
     logger.addHandler(file_handler)
+
+    logger.info(f"로그 파일 사용: {log_file_path}")
 
     return logger

@@ -98,3 +98,219 @@ pm2 logs address-api
 DOS
 # 마지막 100줄만 보기
 pm2 logs address-api --lines 100
+
+
+
+# 2026-06-20
+
+블루그린 배포 Caddy 프록시 서버
+
+   1. 설명
+      
+      로드밸런싱 = 여러 서버/프로세스에 요청을 나눠주는 것
+      무중단 배포 = 고객 요청을 최대한 끊지 않고 새 버전으로 교체하는 것
+      블루그린 배포 = 구버전/신버전을 둘 다 띄운 뒤 한 번에 전환하는 것
+      롤링 배포 = 서버를 하나씩 교체하는 것
+      
+      블루그린 배포
+      
+      cd E:\git\address-api
+      pm2 start ecosystem.config.js --only address-api-blue
+      
+      pm2 list
+      pm2 logs address-api-blue
+      
+      curl http://127.0.0.1:5101/ping
+
+
+   2. Caddy 다운로드
+      Caddy 다운로드
+      https://caddyserver.com/download
+
+      Platform → Windows amd64
+      Standard features → 그대로
+      Extra features → 0 그대로
+      Download 클릭
+
+
+서버 중지 후 삭제
+pm2 stop address-api
+pm2 delete address-api
+
+
+그 다음 5001 비었는지 확인:
+netstat -ano | findstr :5001
+
+blue 서버 5101 실행
+pm2 start ecosystem.config.js --only address-api-blue
+
+로그확인
+pm2 logs address-api-blue
+
+파워쉘 확인
+curl http://127.0.0.1:5101/ping
+
+
+
+
+caddyfile 생성
+.\make_caddyfile.bat
+
+caddy 실행
+.\start_caddy.bat
+
+1. make_caddyfile.bat 실행
+   → C:\caddy\Caddyfile 생성
+
+2. start_caddy.bat 실행
+   → Caddy 5001 실행
+
+** caddy 안되면 v3에 caddy.exe 검사 예외 설정 추가
+
+
+
+
+
+1. Caddy 백그라운드 실행
+C:\caddy\caddy.exe start --config C:\caddy\Caddyfile --adapter caddyfile
+
+netstat -ano | findstr :5001
+curl http://127.0.0.1:5001/ping
+
+
+2. Caddy 중지
+C:\caddy\caddy.exe stop
+
+
+3. Caddy 설정 변경 후 재적용
+나중에 5101 → 5102로 바꿀 때는:
+C:\caddy\caddy.exe reload --config C:\caddy\Caddyfile --adapter caddyfile
+
+
+start_caddy_background.bat = CMD 창 닫아도 Caddy 유지
+stop_caddy.bat = Caddy 중지
+reload_caddy.bat = Caddyfile 변경 반영
+
+netstat -ano | findstr :5001
+netstat -ano | findstr :5101
+
+tasklist /FI "PID eq 44496"
+
+
+
+외부 사용자
+↓
+공인IP:5001
+↓
+공유기 포트포워딩
+↓
+내 PC 172.30.1.8:5001
+↓
+Caddy PID 44496
+↓
+127.0.0.1:5101
+↓
+PM2 address-api-blue
+
+
+
+
+최종 구조
+고객 프로그램
+↓
+공인IP:5001
+↓
+Caddy :5001
+↓
+blue  127.0.0.1:5101
+또는
+green 127.0.0.1:5102
+
+
+
+1. blue 서버 실행
+   powershell 관리자로 실행
+   cd E:\git\address-api
+   pm2 start ecosystem.config.js --only address-api-blue
+
+확인:
+
+curl http://127.0.0.1:5101/ping
+
+
+
+2. Caddyfile이 blue를 보게 설정
+
+C:\caddy\Caddyfile
+
+:5001 {
+reverse_proxy 127.0.0.1:5101
+}
+
+
+
+3. Caddy 백그라운드 실행
+
+처음 실행은 reload가 아니라 start야.
+
+C:\caddy\caddy.exe start --config C:\caddy\Caddyfile --adapter caddyfile
+
+확인:
+
+curl http://127.0.0.1:5001/ping
+
+성공하면:
+
+5001 → Caddy → 5101 blue
+
+
+
+
+새 버전 배포할 때 순서
+1. green 서버 실행
+   cd E:\git\address-api
+   pm2 start ecosystem.config.js --only address-api-green
+
+확인:
+
+curl http://127.0.0.1:5102/ping
+
+
+2. Caddyfile을 green으로 변경
+
+C:\caddy\Caddyfile
+
+:5001 {
+reverse_proxy 127.0.0.1:5102
+}
+
+
+
+
+3. Caddy reload
+
+이때는 이미 Caddy가 떠 있으니까 reload가 맞아.
+
+C:\caddy\caddy.exe reload --config C:\caddy\Caddyfile --adapter caddyfile
+
+확인:
+
+curl http://127.0.0.1:5001/ping
+
+이제 구조는:
+
+5001 → Caddy → 5102 green
+
+
+
+
+
+4. 기존 blue 서버 중지
+
+green이 정상인 걸 확인한 뒤에만 blue를 끄면 돼.
+
+pm2 stop address-api-blue
+
+
+
+PM2로 5101/5102 서버를 띄우고, Caddy 5001은 계속 열어둔 채 reverse_proxy 대상만 5101 ↔ 5102로 바꾸는 방식이야.
