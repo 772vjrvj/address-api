@@ -178,6 +178,65 @@ netstat -ano | findstr :5001
 curl http://127.0.0.1:5001/ping
 
 
+
+
+운영 서버에서는 관리자 PowerShell로 서비스 등록하는 게 맞아.
+
+C:\caddy\caddy.exe stop
+
+sc.exe create caddy start= auto binPath= '"C:\caddy\caddy.exe" run --config "C:\caddy\Caddyfile" --adapter caddyfile'
+
+sc.exe start caddy
+
+
+
+서비스로 실행 중이라서 이렇게 끄면 돼.
+
+Stop-Service caddy
+
+또는:
+
+sc.exe stop caddy
+
+상태 확인:
+
+Get-Service caddy
+Get-Process caddy -ErrorAction SilentlyContinue
+
+정상적으로 꺼지면 상태가 Stopped가 되고, Get-Process에는 아무것도 안 나와.
+
+다시 켜려면:
+
+Start-Service caddy
+
+재시작:
+
+Restart-Service caddy
+
+Windows를 재부팅해도 자동 실행되지 않게 하려면:
+
+Set-Service caddy -StartupType Manual
+Stop-Service caddy
+
+서비스 자체를 완전히 삭제하려면:
+
+Stop-Service caddy
+sc.exe delete caddy
+
+현재는 자동 시작 서비스로 잘 등록된 상태라서, 단순히 잠깐 끄려는 거면 Stop-Service caddy만 실행하면 돼.
+
+
+
+
+
+
+
+
+
+
+
+
+
 2. Caddy 중지
 C:\caddy\caddy.exe stop
 
@@ -314,3 +373,9 @@ pm2 stop address-api-blue
 
 
 PM2로 5101/5102 서버를 띄우고, Caddy 5001은 계속 열어둔 채 reverse_proxy 대상만 5101 ↔ 5102로 바꾸는 방식이야.
+
+
+
+
+Get-Content E:\git\address-api\logs\server_5102.log -Wait -Tail 30 -Encoding UTF8
+

@@ -2,6 +2,22 @@
 import os
 import sys
 import io
+import platform
+
+# ====================================================
+# 0. Windows / Python 3.13 platform.system() 멈춤 우회
+# ====================================================
+# 현재 장애 원인:
+# - waitress import 과정에서 platform.system() 호출
+# - Windows WMI 조회(platform._wmi_query)에서 멈춤
+# - 그래서 serve()까지 도달하지 못하고 5102 포트가 열리지 않음
+#
+# 우회:
+# - Windows 환경에서는 platform.system()을 직접 "Windows"로 고정
+# - waitress가 WMI 조회를 타지 않게 처리
+# ====================================================
+if os.name == "nt":
+    platform.system = lambda: "Windows"
 
 from flask import Flask
 from waitress import serve
