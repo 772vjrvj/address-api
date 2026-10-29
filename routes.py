@@ -70,13 +70,24 @@ def require_apikey(view_function):
 # API Key 불필요
 @api_bp.route("/ping", methods=["GET"])
 def ping_test():
-    logger.info(f"단순 접속 테스트 요청 수신 (IP: {request.remote_addr})")
+    """
+    서버 실행 상태를 확인하는 API.
+
+    PM2가 전달한 SERVER_PORT를 응답에 포함하여
+    Blue(5101)와 Green(5102) 중 어느 서버가 응답했는지 확인한다.
+    """
+    server_port = int(os.getenv("SERVER_PORT", "5001"))
+
+    logger.info(
+        f"단순 접속 테스트 요청 수신 "
+        f"(IP: {request.remote_addr}, Port: {server_port})"
+    )
 
     return jsonify({
         "status": "success",
-        "message": "서버 통신이 완벽하게 뚫려있습니다! (Port 5001 정상 작동)"
+        "message": "서버 통신이 정상입니다.",
+        "server_port": server_port
     })
-
 
 # ====================================================
 # 6. 주소 일괄 변환 API

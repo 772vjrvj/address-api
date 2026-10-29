@@ -1,3 +1,20 @@
+이번 문제는 서비스는 중지돼 있는데 별도 caddy.exe 프로세스가 2019 포트를 잡고 있던 것 때문입니다.
+
+다음에 똑같이 안 올라오면 이 순서만 기억하시면 됩니다:
+
+Get-NetTCPConnection -LocalPort 2019 -State Listen -ErrorAction SilentlyContinue
+
+프로세스가 있으면:
+
+$connection = Get-NetTCPConnection -LocalPort 2019 -State Listen
+Stop-Process -Id $connection.OwningProcess -Force
+Start-Service caddy
+
+그리고 확인:
+
+Get-Service caddy
+
+
 1. Caddy 실행 및 확인
 
 Start-Service caddy
@@ -58,6 +75,7 @@ Status   Name
 ------   ----
 Stopped  caddy
 
+Start-Service caddy
 
 2. PM2 서버 종료
 

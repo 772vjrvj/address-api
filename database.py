@@ -205,22 +205,53 @@ def get_address_from_postgres(lat, lng):
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             sql = """
+                  WITH target AS (
+                      /*
+                       * 요청 좌표를 한 번만 geography로 변환한다.
+                       *
+                       * ST_MakePoint 좌표 순서:
+                       * 경도(longitude), 위도(latitude)
+                       */
+                      SELECT
+                          ST_SetSRID(
+                                  ST_MakePoint(%s, %s),
+                                  4326
+                          )::geography AS target_geography
+                  )
                   SELECT
-                      address_data,
-                      road_address_data
-                  FROM address_cache
+                      ac.address_data,
+                      ac.road_address_data
+                  FROM address_cache AS ac
+                           CROSS JOIN target
                   WHERE ST_DWithin(
-                                geom::geography,
-                                ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
+                                ac.geom::geography,
+                                target.target_geography,
                                 %s
                         )
-                  ORDER BY updated_at DESC
-                  LIMIT 1 \
+                  /*
+                   * 1순위: 요청 좌표와 가장 가까운 캐시
+                   * 2순위: 거리가 같으면 가장 최근 캐시
+                   * 3순위: 거리와 저장 시각이 같으면 큰 ID
+                   */
+                  ORDER BY
+                      ST_Distance(
+                              ac.geom::geography,
+                              target.target_geography
+                      ) ASC,
+                      ac.updated_at DESC NULLS LAST,
+                      ac.id DESC
+                  LIMIT 1
                   """
 
-            # 중요:
-            # ST_MakePoint는 (경도, 위도) 순서다.
-            cur.execute(sql, (norm_lng, norm_lat, ADDRESS_CACHE_RADIUS_METER))
+            cur.execute(
+                sql,
+                (
+                    norm_lng,
+                    norm_lat,
+                    ADDRESS_CACHE_RADIUS_METER
+                )
+            )
+
             row = cur.fetchone()
 
             if row:
@@ -274,7 +305,8 @@ def get_addresses_from_postgres_batch(coords):
     - 기존처럼 좌표마다 DB를 100번 조회하지 않는다.
     - 요청 좌표 100개를 DB에 한 번에 전달한다.
     - 각 요청 좌표 기준 반경 ADDRESS_CACHE_RADIUS_METER 안의 캐시를 찾는다.
-    - 같은 좌표에 여러 캐시가 있으면 updated_at 최신 데이터 1개를 사용한다.
+    - 반경 안에 여러 캐시가 있으면 가장 가까운 데이터를 사용한다.
+    - 거리가 같으면 updated_at이 가장 최근인 데이터 1개를 사용한다.
     """
     if not coords:
         return {}
@@ -318,27 +350,79 @@ def get_addresses_from_postgres_batch(coords):
             # ----------------------------------------------------
             sql = f"""
                 WITH input_coords(lat, lng) AS (
+                    /*
+                     * execute_values가 여러 요청 좌표를
+                     * VALUES 목록으로 전달한다.
+                     */
                     VALUES %s
                 ),
+
+                prepared_coords AS (
+                    /*
+                     * 각 요청 좌표를 geography로 한 번만 변환한다.
+                     *
+                     * 이후 반경 검색과 거리 계산에서
+                     * 변환된 target_geography를 재사용한다.
+                     */
+                    SELECT
+                        lat,
+                        lng,
+                        ST_SetSRID(
+                            ST_MakePoint(lng, lat),
+                            4326
+                        )::geography AS target_geography
+                    FROM input_coords
+                ),
+
                 matched AS (
+                    /*
+                     * DISTINCT ON은 요청 좌표마다
+                     * 정렬 결과의 첫 번째 캐시 한 건만 선택한다.
+                     */
                     SELECT DISTINCT ON (i.lat, i.lng)
                         i.lat AS input_lat,
                         i.lng AS input_lng,
+                        ac.id AS cache_id,
                         ac.address_data,
                         ac.road_address_data,
-                        ac.updated_at
-                    FROM input_coords i
-                    JOIN address_cache ac
+                        ac.updated_at,
+
+                        /*
+                         * 요청 좌표와 캐시 좌표 사이의 거리다.
+                         * geography를 사용하므로 단위는 미터다.
+                         */
+                        ST_Distance(
+                            ac.geom::geography,
+                            i.target_geography
+                        ) AS distance_meter
+
+                    FROM prepared_coords AS i
+
+                    JOIN address_cache AS ac
                         ON ST_DWithin(
                             ac.geom::geography,
-                            ST_SetSRID(ST_MakePoint(i.lng, i.lat), 4326)::geography,
+                            i.target_geography,
                             {ADDRESS_CACHE_RADIUS_METER}
                         )
+
+                    /*
+                     * DISTINCT ON에 사용한 좌표가
+                     * ORDER BY의 가장 앞에 있어야 한다.
+                     *
+                     * 각 요청 좌표 안에서는 다음 순서로 선택한다.
+                     *
+                     * 1. 가장 가까운 캐시
+                     * 2. 거리가 같으면 가장 최근 캐시
+                     * 3. 거리와 저장 시각이 같으면 큰 ID
+                     */
                     ORDER BY
                         i.lat,
                         i.lng,
-                        ac.updated_at DESC
+                        distance_meter ASC,
+                        ac.updated_at DESC NULLS LAST,
+                        ac.id DESC
                 )
+
                 SELECT
                     input_lat,
                     input_lng,

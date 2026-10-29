@@ -4,7 +4,8 @@ module.exports = {
             name: "address-api-blue",
             cwd: "E:/git/address-api",
             script: "run.py",
-            interpreter: "E:/git/address-api/venv/Scripts/python.exe",
+            interpreter: "E:/git/address-api/venv/Scripts/pythonw.exe",
+            windowsHide: true,
             env: {
                 SERVER_HOST: "127.0.0.1",
                 SERVER_PORT: "5101",
@@ -15,7 +16,8 @@ module.exports = {
             name: "address-api-green",
             cwd: "E:/git/address-api",
             script: "run.py",
-            interpreter: "E:/git/address-api/venv/Scripts/python.exe",
+            interpreter: "E:/git/address-api/venv/Scripts/pythonw.exe",
+            windowsHide: true,
             env: {
                 SERVER_HOST: "127.0.0.1",
                 SERVER_PORT: "5102",
